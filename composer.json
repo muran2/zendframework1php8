@@ -12,10 +12,5 @@
     "include-path": [
         "library/"
     ],
-    "extra": {
-        "branch-alias": {
-            "dev-master": "1.12.x-dev"
-        }
-    },
-    "license": "LGPL"
+    "license": "GPL-2.0-or-later"
 }
