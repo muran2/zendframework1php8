@@ -2,7 +2,7 @@
     "name": "muran/zendframework1",
     "description": "Zend Framework 1 for php8",
     "require": {
-        "php": ">=5.2.11"
+        "php": ">=8.0"
     },
     "autoload": {
         "psr-0": {
