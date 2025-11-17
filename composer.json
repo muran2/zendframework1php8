@@ -1,5 +1,5 @@
 {
-    "name": "muran2/zendframework1",
+    "name": "muran2/zendframework1php8",
     "description": "Zend Framework 1 for php8",
     "require": {
         "php": ">=8.0"
