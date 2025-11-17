@@ -15,17 +15,15 @@
  * @category   Zend
  * @package    Zend_Db
  * @subpackage Adapter
- * @copyright  Copyright (c) 2005-2015 Zend Technologies USA Inc. (http://www.zend.com)
+ * @copyright  Copyright (c) 2005-2012 Zend Technologies USA Inc. (http://www.zend.com)
  * @license    http://framework.zend.com/license/new-bsd     New BSD License
- * @version    $Id$
+ * @version    $Id: Pgsql.php 24593 2012-01-05 20:35:02Z matthew $
  */
-
 
 /**
  * @see Zend_Db_Adapter_Pdo_Abstract
  */
-require_once 'Zend/Db/Adapter/Pdo/Abstract.php';
-
+// require_once 'Zend/Db/Adapter/Pdo/Abstract.php';
 
 /**
  * Class for connecting to PostgreSQL databases and performing common operations.
@@ -33,7 +31,7 @@ require_once 'Zend/Db/Adapter/Pdo/Abstract.php';
  * @category   Zend
  * @package    Zend_Db
  * @subpackage Adapter
- * @copyright  Copyright (c) 2005-2015 Zend Technologies USA Inc. (http://www.zend.com)
+ * @copyright  Copyright (c) 2005-2012 Zend Technologies USA Inc. (http://www.zend.com)
  * @license    http://framework.zend.com/license/new-bsd     New BSD License
  */
 class Zend_Db_Adapter_Pdo_Pgsql extends Zend_Db_Adapter_Pdo_Abstract
@@ -69,8 +67,33 @@ class Zend_Db_Adapter_Pdo_Pgsql extends Zend_Db_Adapter_Pdo_Abstract
         'DECIMAL'            => Zend_Db::FLOAT_TYPE,
         'DOUBLE PRECISION'   => Zend_Db::FLOAT_TYPE,
         'NUMERIC'            => Zend_Db::FLOAT_TYPE,
-        'REAL'               => Zend_Db::FLOAT_TYPE
+        'REAL'               => Zend_Db::FLOAT_TYPE,
     );
+
+    protected function _dsn()
+    {
+        // baseline of DSN parts
+        $dsn = $this->_config;
+
+        // don't pass the username, password, charset, persistent and driver_options in the DSN
+        unset($dsn['username']);
+        unset($dsn['password']);
+        unset($dsn['options']);
+        unset($dsn['charset']);
+        unset($dsn['persistent']);
+        unset($dsn['driver_options']);
+
+        // use all remaining parts in the DSN
+        foreach ($dsn as $key => $val) {
+            if ($key==='dsn_options')
+                continue;
+            $dsn[$key] = "$key=$val";
+        }
+
+        !empty($dsn['dsn_options']) && $dsn['options']="options='{$dsn['dsn_options']}'";
+        unset($dsn['dsn_options']);
+        return $this->_pdoType . ':' . implode(';', $dsn);
+    }
 
     /**
      * Creates a PDO object and connects to the database.
@@ -80,13 +103,15 @@ class Zend_Db_Adapter_Pdo_Pgsql extends Zend_Db_Adapter_Pdo_Abstract
      */
     protected function _connect()
     {
-        if ($this->_connection) {
+        if ($this->_connection)
+        {
             return;
         }
 
         parent::_connect();
 
-        if (!empty($this->_config['charset'])) {
+        if (!empty($this->_config['charset']))
+        {
             $sql = "SET NAMES '" . $this->_config['charset'] . "'";
             $this->_connection->exec($sql);
         }
@@ -101,17 +126,17 @@ class Zend_Db_Adapter_Pdo_Pgsql extends Zend_Db_Adapter_Pdo_Abstract
     {
         // @todo use a better query with joins instead of subqueries
         $sql = "SELECT c.relname AS table_name "
-             . "FROM pg_class c, pg_user u "
-             . "WHERE c.relowner = u.usesysid AND c.relkind = 'r' "
-             . "AND NOT EXISTS (SELECT 1 FROM pg_views WHERE viewname = c.relname) "
-             . "AND c.relname !~ '^(pg_|sql_)' "
-             . "UNION "
-             . "SELECT c.relname AS table_name "
-             . "FROM pg_class c "
-             . "WHERE c.relkind = 'r' "
-             . "AND NOT EXISTS (SELECT 1 FROM pg_views WHERE viewname = c.relname) "
-             . "AND NOT EXISTS (SELECT 1 FROM pg_user WHERE usesysid = c.relowner) "
-             . "AND c.relname !~ '^pg_'";
+            . "FROM pg_class c, pg_user u "
+            . "WHERE c.relowner = u.usesysid AND c.relkind = 'r' "
+            . "AND NOT EXISTS (SELECT 1 FROM pg_views WHERE viewname = c.relname) "
+            . "AND c.relname !~ '^(pg_|sql_)' "
+            . "UNION "
+            . "SELECT c.relname AS table_name "
+            . "FROM pg_class c "
+            . "WHERE c.relkind = 'r' "
+            . "AND NOT EXISTS (SELECT 1 FROM pg_views WHERE viewname = c.relname) "
+            . "AND NOT EXISTS (SELECT 1 FROM pg_user WHERE usesysid = c.relowner) "
+            . "AND c.relname !~ '^pg_'";
 
         return $this->fetchCol($sql);
     }
@@ -140,11 +165,12 @@ class Zend_Db_Adapter_Pdo_Pgsql extends Zend_Db_Adapter_Pdo_Abstract
      * PRIMARY_POSITION => integer; position of column in primary key
      * IDENTITY         => integer; true if column is auto-generated with unique values
      *
+     * @param string $tableName
+     * @param string $schemaName OPTIONAL
+     *
+     * @return array
      * @todo Discover integer unsigned property.
      *
-     * @param  string $tableName
-     * @param  string $schemaName OPTIONAL
-     * @return array
      */
     public function describeTable($tableName, $schemaName = null)
     {
@@ -156,21 +182,23 @@ class Zend_Db_Adapter_Pdo_Pgsql extends Zend_Db_Adapter_Pdo_Abstract
                 t.typname AS type,
                 a.atttypmod,
                 FORMAT_TYPE(a.atttypid, a.atttypmod) AS complete_type,
-                d.adsrc AS default_value,
+                pg_get_expr(ad.adbin, ad.adrelid) AS default_value,
                 a.attnotnull AS notnull,
                 a.attlen AS length,
                 co.contype,
                 ARRAY_TO_STRING(co.conkey, ',') AS conkey
             FROM pg_attribute AS a
+                LEFT JOIN pg_attrdef AS ad ON a.attrelid = ad.oid
                 JOIN pg_class AS c ON a.attrelid = c.oid
                 JOIN pg_namespace AS n ON c.relnamespace = n.oid
                 JOIN pg_type AS t ON a.atttypid = t.oid
                 LEFT OUTER JOIN pg_constraint AS co ON (co.conrelid = c.oid
                     AND a.attnum = ANY(co.conkey) AND co.contype = 'p')
                 LEFT OUTER JOIN pg_attrdef AS d ON d.adrelid = c.oid AND d.adnum = a.attnum
-            WHERE a.attnum > 0 AND c.relname = ".$this->quote($tableName);
-        if ($schemaName) {
-            $sql .= " AND n.nspname = ".$this->quote($schemaName);
+            WHERE a.attnum > 0 AND c.relname = " . $this->quote($tableName);
+        if ($schemaName)
+        {
+            $sql .= " AND n.nspname = " . $this->quote($schemaName);
         }
         $sql .= ' ORDER BY a.attnum';
 
@@ -193,25 +221,33 @@ class Zend_Db_Adapter_Pdo_Pgsql extends Zend_Db_Adapter_Pdo_Abstract
         $conkey        = 11;
 
         $desc = array();
-        foreach ($result as $key => $row) {
+        foreach ($result as $key => $row)
+        {
             $defaultValue = $row[$default_value];
-            if ($row[$type] == 'varchar' || $row[$type] == 'bpchar' ) {
-                if (preg_match('/character(?: varying)?(?:\((\d+)\))?/', $row[$complete_type], $matches)) {
-                    if (isset($matches[1])) {
+            if ($row[$type] == 'varchar' || $row[$type] == 'bpchar')
+            {
+                if (preg_match('/character(?: varying)?(?:\((\d+)\))?/', $row[$complete_type], $matches))
+                {
+                    if (isset($matches[1]))
+                    {
                         $row[$length] = $matches[1];
-                    } else {
+                    }
+                    else
+                    {
                         $row[$length] = null; // unlimited
                     }
                 }
-                if (preg_match("/^'(.*?)'::(?:character varying|bpchar)$/", $defaultValue, $matches)) {
+                if (preg_match("/^'(.*?)'::(?:character varying|bpchar)$/", $defaultValue, $matches))
+                {
                     $defaultValue = $matches[1];
                 }
             }
             list($primary, $primaryPosition, $identity) = array(false, null, false);
-            if ($row[$contype] == 'p') {
-                $primary = true;
+            if ($row[$contype] == 'p')
+            {
+                $primary         = true;
                 $primaryPosition = array_search($row[$attnum], explode(',', $row[$conkey])) + 1;
-                $identity = (bool) (preg_match('/^nextval/', $row[$default_value]));
+                $identity        = (bool)(preg_match('/^nextval/', $row[$default_value]));
             }
             $desc[$this->foldCase($row[$colname])] = array(
                 'SCHEMA_NAME'      => $this->foldCase($row[$nspname]),
@@ -220,19 +256,19 @@ class Zend_Db_Adapter_Pdo_Pgsql extends Zend_Db_Adapter_Pdo_Abstract
                 'COLUMN_POSITION'  => $row[$attnum],
                 'DATA_TYPE'        => $row[$type],
                 'DEFAULT'          => $defaultValue,
-                'NULLABLE'         => (bool) ($row[$notnull] != 't'),
+                'NULLABLE'         => (bool)($row[$notnull] != 't'),
                 'LENGTH'           => $row[$length],
                 'SCALE'            => null, // @todo
                 'PRECISION'        => null, // @todo
                 'UNSIGNED'         => null, // @todo
                 'PRIMARY'          => $primary,
                 'PRIMARY_POSITION' => $primaryPosition,
-                'IDENTITY'         => $identity
+                'IDENTITY'         => $identity,
             );
         }
+
         return $desc;
     }
-
 
     /**
      * Adds an adapter-specific LIMIT clause to the SELECT statement.
@@ -240,30 +276,34 @@ class Zend_Db_Adapter_Pdo_Pgsql extends Zend_Db_Adapter_Pdo_Abstract
      * @param string $sql
      * @param integer $count
      * @param integer $offset OPTIONAL
+     *
      * @return string
      */
     public function limit($sql, $count, $offset = 0)
     {
         $count = intval($count);
-        if ($count <= 0) {
+        if ($count <= 0)
+        {
             /**
              * @see Zend_Db_Adapter_Exception
              */
-            require_once 'Zend/Db/Adapter/Exception.php';
+            // require_once 'Zend/Db/Adapter/Exception.php';
             throw new Zend_Db_Adapter_Exception("LIMIT argument count=$count is not valid");
         }
 
         $offset = intval($offset);
-        if ($offset < 0) {
+        if ($offset < 0)
+        {
             /**
              * @see Zend_Db_Adapter_Exception
              */
-            require_once 'Zend/Db/Adapter/Exception.php';
+            // require_once 'Zend/Db/Adapter/Exception.php';
             throw new Zend_Db_Adapter_Exception("LIMIT argument offset=$offset is not valid");
         }
 
         $sql .= " LIMIT $count";
-        if ($offset > 0) {
+        if ($offset > 0)
+        {
             $sql .= " OFFSET $offset";
         }
 
@@ -276,15 +316,17 @@ class Zend_Db_Adapter_Pdo_Pgsql extends Zend_Db_Adapter_Pdo_Abstract
      * (e.g. Oracle, PostgreSQL, DB2).  Other RDBMS brands return null.
      *
      * @param string $sequenceName
+     *
      * @return string
      */
     public function lastSequenceId($sequenceName)
     {
         $this->_connect();
-        $sequenceName = str_replace($this->getQuoteIdentifierSymbol(), '', (string) $sequenceName);
-        $value = $this->fetchOne("SELECT CURRVAL("
-               . $this->quote($this->quoteIdentifier($sequenceName, true))
-               . ")");
+        $sequenceName = str_replace($this->getQuoteIdentifierSymbol(), '', (string)$sequenceName);
+        $value        = $this->fetchOne("SELECT CURRVAL("
+            . $this->quote($this->quoteIdentifier($sequenceName, true))
+            . ")");
+
         return $value;
     }
 
@@ -294,15 +336,17 @@ class Zend_Db_Adapter_Pdo_Pgsql extends Zend_Db_Adapter_Pdo_Abstract
      * (e.g. Oracle, PostgreSQL, DB2).  Other RDBMS brands return null.
      *
      * @param string $sequenceName
+     *
      * @return string
      */
     public function nextSequenceId($sequenceName)
     {
         $this->_connect();
-        $sequenceName = str_replace($this->getQuoteIdentifierSymbol(), '', (string) $sequenceName);
-        $value = $this->fetchOne("SELECT NEXTVAL("
-               . $this->quote($this->quoteIdentifier($sequenceName, true))
-               . ")");
+        $sequenceName = str_replace($this->getQuoteIdentifierSymbol(), '', (string)$sequenceName);
+        $value        = $this->fetchOne("SELECT NEXTVAL("
+            . $this->quote($this->quoteIdentifier($sequenceName, true))
+            . ")");
+
         return $value;
     }
 
@@ -316,20 +360,25 @@ class Zend_Db_Adapter_Pdo_Pgsql extends Zend_Db_Adapter_Pdo_Abstract
      * returns the last value generated for such a column, and the table name
      * argument is disregarded.
      *
-     * @param string $tableName   OPTIONAL Name of table.
-     * @param string $primaryKey  OPTIONAL Name of primary key column.
+     * @param string $tableName OPTIONAL Name of table.
+     * @param string $primaryKey OPTIONAL Name of primary key column.
+     *
      * @return string
      */
     public function lastInsertId($tableName = null, $primaryKey = null)
     {
-        if ($tableName !== null) {
+        if ($tableName !== null)
+        {
             $sequenceName = $tableName;
-            if ($primaryKey) {
+            if ($primaryKey)
+            {
                 $sequenceName .= "_$primaryKey";
             }
             $sequenceName .= '_seq';
+
             return $this->lastSequenceId($sequenceName);
         }
+
         return $this->_connection->lastInsertId($tableName);
     }
 
